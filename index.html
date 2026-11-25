@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#1B1340" />
+    <title>Private test build</title>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body { display: grid; place-items: center; background: #1B1340; color: #fff; font: 600 17px/1.45 system-ui, sans-serif; }
+      main { max-width: 320px; padding: 24px; text-align: center; }
+      h1 { margin: 0 0 10px; font-size: 22px; }
+      p { margin: 0; opacity: 0.85; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Private test build</h1>
+      <p id="msg">Opening&hellip;</p>
+    </main>
+    <script>
+      (async () => {
+        const say = (t) => { document.getElementById("msg").textContent = t; };
+        const found = location.hash.match(/k=([A-Za-z0-9_-]{43})/);
+        if (!("serviceWorker" in navigator) || !window.crypto || !crypto.subtle) {
+          say("Please open this link in Chrome or Safari itself: not inside another app, and not in a private window.");
+          return;
+        }
+        // If the unlocked game should have appeared and this page keeps coming back instead, stop: do not reload for ever.
+        let tries = [0, 0]; // [when the first recent try was, how many since]
+        try { tries = JSON.parse(sessionStorage.getItem("tl-lock-tries")) || tries; } catch (err) { /* first visit */ }
+        if (Date.now() - tries[0] > 20000) tries = [Date.now(), 0];
+        try {
+          const reg = await navigator.serviceWorker.register("sw.js");
+          await navigator.serviceWorker.ready;
+          const worker = reg.active;
+          const answer = await new Promise((done) => {
+            const ch = new MessageChannel();
+            ch.port1.onmessage = (e) => done(e.data);
+            worker.postMessage({ key: found ? found[1] : null }, [ch.port2]);
+            setTimeout(() => done({ ok: false, slow: true }), 15000);
+          });
+          if (!answer.ok) {
+            say(answer.slow ? "This is taking too long. Check your connection and open the link again."
+              : found ? "This link does not open the game any more. Ask for a new one."
+              : "This is a private test build. Ask the owner for the full link.");
+            return;
+          }
+          if (tries[1] >= 2) { say("Could not start the game in this browser. Try Chrome or Safari."); return; }
+          sessionStorage.setItem("tl-lock-tries", JSON.stringify([tries[0], tries[1] + 1]));
+          if (!navigator.serviceWorker.controller) {
+            await new Promise((done) => { navigator.serviceWorker.addEventListener("controllerchange", done, { once: true }); setTimeout(done, 3000); });
+          }
+          history.replaceState(null, "", location.pathname); // keep the key out of the address bar and of screenshots
+          location.reload();
+        } catch (err) {
+          say("Could not start the game in this browser. Try Chrome or Safari.");
+        }
+      })();
+    </script>
+  </body>
+</html>
